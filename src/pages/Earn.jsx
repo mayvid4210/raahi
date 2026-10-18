@@ -1,0 +1,17 @@
+import React,{useState} from 'react';
+import ContentCard from '../components/ContentCard';
+import {opportunities,projects,rankItems,allContent} from '../data/demoData';
+export default function Earn({profile,student,actions,saving}){
+  const [tab,setTab]=useState('roles'),[filters,setFilters]=useState([]);
+  const toggle=value=>setFilters(filters.includes(value)?filters.filter(x=>x!==value):[...filters,value]);
+  const roles=rankItems(opportunities,profile,student.interests).filter(item=>filters.every(filter=>filter==='Near me'?item.mode==='local'||item.mode==='hybrid':filter==='Remote'?item.mode==='remote'||item.mode==='hybrid':filter==='Beginner'?item.level==='beginner':filter==='Paid'?item.compensation==='paid':item.time.toLowerCase().includes('weekend')));
+  const saved=allContent.filter(item=>['opportunity','project','scholarship'].includes(item.type)&&student.savedIds.includes(item.id));
+  const list=tab==='roles'?roles:tab==='projects'?rankItems(projects,profile,student.interests):saved;
+  return <main className="student-page"><div className="eyebrow">LEARNING MEETS REAL LIFE</div><h1>Put your skills to work.</h1><p>Try something small, close to the people around you.</p><div className="section-tabs" role="group" aria-label="Earn sections">{[['roles','Part-Time Opportunities'],['projects','Village Projects'],['saved','My Projects & Saves']].map(([id,title])=><button className={tab===id?'active':''} aria-pressed={tab===id} key={id} onClick={()=>setTab(id)}>{title}</button>)}</div>
+    {tab==='roles'&&<><div className="filter-row wrap">{['Near me','Remote','Beginner','Paid','Weekend'].map(label=><button className={filters.includes(label)?'chip active':'chip'} key={label} aria-pressed={filters.includes(label)} onClick={()=>toggle(label)}>{label}</button>)}</div><p className="small-note">Near me means “Near your area”. {profile.locationPreference || profile.mobility ? 'Your preference: '+(profile.locationPreference||profile.mobility)+'. ' : ''}No GPS is requested.</p></>}
+    {tab==='projects'&&<section className="project-banner"><span className="content-type">VILLAGE PROBLEM-TO-INCOME · DEMO</span><h2>Problems around you can become opportunities.</h2><p>Learn by solving something real. Start learning on any project to add its skills to your path.</p><div className="connection-chain"><span>Local problem</span>→<span>Skill</span>→<span>Project</span>→<span>Portfolio</span></div></section>}
+    <p className="demo-label">All organisations, roles and projects shown here are fictional demos. No job, wage, placement or paid follow-up is promised.</p><div className="content-grid">{list.map(item=><ContentCard key={item.id} {...{item,student,actions,saving}}/>)}</div>
+    {tab==='saved'&&student.legacySaved.length>0&&<section className="feature-panel"><h2>Previously saved demo items</h2>{student.legacySaved.map(item=><article className="business-card" key={item.id}><span className="content-type">Earlier demo save</span><h3>{item.title}</h3><p>{item.text}</p></article>)}</section>}
+    {!list.length&&!(tab==='saved'&&student.legacySaved.length)&&<div className="empty-state"><h3>{tab==='saved'?'Your saved opportunities will appear here.':'No demo roles match all these filters.'}</h3><p>{tab==='saved'?'Save a project or opportunity to keep it on this device.':'Try removing a filter to see more possibilities.'}</p>{tab==='roles'&&<button className="chip" onClick={()=>setFilters([])}>Clear filters</button>}</div>}
+  </main>
+}

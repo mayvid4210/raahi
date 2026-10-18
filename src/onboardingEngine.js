@@ -1,4 +1,4 @@
-// Local-only today. A future server-backed Gemini call belongs at this boundary.
+// Shared profile helpers and the original local conversational engine.
 export function normalizeProfile(profile = {}, language = 'en') {
   return { name: '', education: '', interests: [], skills: [], experiences: [], preferences: [], goals: [], locationPreference: '', ...profile,
     preferences: profile.preferences || (profile.work ? [profile.work] : []),
@@ -22,7 +22,7 @@ export function questionFor(topic, profile, variant = 0) {
   };
   return questions[topic][hi ? 1 : 0];
 }
-export function getNextConversationTurn(message, previous, history) {
+export function getOfflineConversationTurn(message, previous, history) {
   const profile = normalizeProfile(previous, previous.language);
   // Copy arrays: never change a profile that has already been saved.
   for (const key of ['interests', 'skills', 'experiences', 'preferences', 'goals']) profile[key] = [...profile[key]];
@@ -76,4 +76,51 @@ export function getNextConversationTurn(message, previous, history) {
   else if (!profile.locationPreference && !asked.includes('location')) next = 'location';
   else next = answered >= 5 ? 'summary' : 'preferences';
   return { profile, topic: next, message: questionFor(next, profile, answered), status: next === 'summary' ? 'review' : 'chat' };
+}
+
+
+// One boundary for both online turns and the existing offline engine.
+export async function getNextConversationTurn(message, profile, history, {signal} = {}) {
+  const fields = ['name', 'education', 'interests', 'skills', 'experiences', 'preferences', 'goals', 'locationPreference', 'language'];
+  const lists = ['interests', 'skills', 'experiences', 'preferences', 'goals'];
+  const current = normalizeProfile(profile, profile.language);
+  const cleanProfile = Object.fromEntries(fields.map(field => [field, current[field]]));
+  if (navigator.onLine) {
+    const controller = new AbortController();
+    const cancel = () => controller.abort();
+    signal?.addEventListener('abort', cancel, {once: true});
+    if (signal?.aborted) controller.abort();
+    const timeout = setTimeout(cancel, 12000);
+    try {
+      const response = await fetch('/api/onboarding', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, signal: controller.signal,
+        body: JSON.stringify({message, history: history.slice(-16).map(turn => ({role: turn.role, text: turn.text})), profile: cleanProfile, language: current.language}),
+      });
+      if (!response.ok) throw new Error('Service unavailable');
+      const turn = await response.json();
+      const p = turn?.profile;
+      const topics = ['name', 'education', 'interests', 'shop', 'drawing', 'experience', 'skills', 'goals', 'preferences', 'location', 'summary'];
+      if (!p || typeof p !== 'object' || Array.isArray(p) || Object.keys(p).length !== fields.length
+        || !fields.every(field => Object.hasOwn(p, field))
+        || !['name', 'education', 'locationPreference', 'language'].every(field => typeof p[field] === 'string' && p[field].length <= 1000)
+        || !lists.every(field => Array.isArray(p[field]) && p[field].length <= 24 && p[field].every(value => typeof value === 'string' && value.trim() && value.length <= 1000))
+        || p.language !== current.language || typeof turn.reply !== 'string' || !turn.reply.trim() || turn.reply.length > 600
+        || typeof turn.profileComplete !== 'boolean' || !topics.includes(turn.topic)
+        || (turn.profileComplete ? turn.topic !== 'summary' : turn.topic === 'summary')) throw new Error('Invalid turn');
+      for (const field of lists) p[field] = [...new Set([...current[field], ...p[field]])];
+      if (lists.some(field => p[field].length > 24) || ['name','education','locationPreference'].some(field => current[field] && !p[field].trim())) throw new Error('Lost profile data');
+      if (turn.profileComplete && (!p.name.trim() || !p.education.trim() || !p.interests.length
+        || !(p.skills.length || p.experiences.length) || !(p.goals.length || p.preferences.length)
+        || history.filter(item => item.role === 'student').length + 1 < 5)) throw new Error('Premature completion');
+      return {profile: {...current, ...p}, message: turn.reply.trim(), topic: turn.topic, status: turn.profileComplete ? 'review' : 'chat'};
+    } catch {
+      if (signal?.aborted) throw new DOMException('Conversation closed', 'AbortError');
+      return {...getOfflineConversationTurn(message, current, history), fallback: true};
+    } finally {
+      clearTimeout(timeout);
+      signal?.removeEventListener('abort', cancel);
+    }
+  }
+  if (signal?.aborted) throw new DOMException('Conversation closed', 'AbortError');
+  return getOfflineConversationTurn(message, current, history);
 }

@@ -35,3 +35,18 @@ export async function clearAllRaahiData() {
     tx.onabort = () => reject(tx.error);
   });
 }
+
+// Related student actions commit together using the existing stores and sync queue.
+export async function saveMany(records) {
+  const db = await connection;
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(['data', 'pendingChanges'], 'readwrite');
+    for (const [key, value] of Object.entries(records)) {
+      tx.objectStore('data').put(value, key);
+      tx.objectStore('pendingChanges').add({key, value, updatedAt: new Date().toISOString()});
+    }
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}

@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/:page(onboarding|dashboard|for-you|explore|learn|earn|community|settings|profile|future|journey|opportunities|projects|facilitator)",
+      "destination": "/"
+    }
+  ]
+}
